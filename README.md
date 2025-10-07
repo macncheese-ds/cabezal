@@ -1,98 +1,135 @@
-# Mantenimiento de Cabezales
+# Sistema de Registro de Mantenimiento de Cabezales
 
-Sistema de gestión de mantenimiento preventivo para cabezales por líneas de producción.
+Sistema completo para el registro y seguimiento de mantenimientos de cabezales SMT (H2, H8, H24).
 
 ## Características
 
-- **Gestión por líneas**: Manejo específico por línea de producción
-- **Tipos de mantenimiento**: Semanal, Mensual, Semestral y Año y Medio
-- **Estados de seguimiento**: Activo, Vencido, Próximo a Vencer, En Reparación, Dado de Baja
-- **Lista de verificación**: 12 puntos de control específicos para cabezales
-- **Cálculo automático**: Fechas de próximo mantenimiento según tipo
-- **Indicadores visuales**: Códigos de colores y barras de progreso
+- Registro de cabezales por tipo (H2, H8, H24)
+- Mantenimientos diferenciados por tipo de cabezal:
+  - **H2**: Mensual y 18 meses
+  - **H8**: Semanal, Quincenal, Mensual y 18 meses
+  - **H24**: Semanal, Mensual, Semestral y 18 meses
+- Verificaciones específicas según tipo y frecuencia de mantenimiento
+- Estados: En Línea, Tool Room, Baja, En Reparación
+- Sistema de alertas para vencimientos
+- Historial completo de mantenimientos
+- Dar de baja y reactivar cabezales
+
+## Requisitos
+
+- Node.js v18+
+- MySQL 8.0+
+- npm o yarn
 
 ## Instalación
 
 ### Backend
+
 ```bash
 cd backend
 npm install
+```
+
+Configurar variables de entorno en `.env`:
+
+```
+DB_HOST=localhost
+DB_PORT=3306
+DB_USER=root
+DB_PASSWORD=tu_password
+DB_NAME=cabezales
+PORT=8003
+```
+
+Crear la base de datos:
+
+```bash
+mysql -u root -p < init.sql
+```
+
+Iniciar servidor:
+
+```bash
+npm start
 ```
 
 ### Frontend
+
 ```bash
 cd frontend
 npm install
-```
-
-## Configuración de Base de Datos
-
-1. Crear la base de datos ejecutando `init.sql`
-2. Configurar las variables de entorno en el backend:
-   - `DB_HOST`: Host de la base de datos (default: localhost)
-   - `DB_USER`: Usuario de la base de datos (default: root)
-   - `DB_PASSWORD`: Contraseña de la base de datos
-   - `DB_NAME`: Nombre de la base de datos (default: cabezal)
-   - `PORT`: Puerto del servidor (default: 8005)
-
-## Ejecución
-
-### Opción 1: Script automático
-```bash
-start.bat
-```
-
-### Opción 2: Manual
-```bash
-# Backend
-cd backend
-npm start
-
-# Frontend (en otra terminal)
-cd frontend
 npm run dev
 ```
 
-## Acceso
+El frontend estará disponible en: http://localhost:4303
 
-- **Frontend**: http://localhost:3005
-- **Backend**: http://localhost:8005
+## Estructura de la Base de Datos
+
+### Tabla: m_cabezales
+
+- `id`: INT AUTO_INCREMENT PRIMARY KEY
+- `numero`: VARCHAR(100) UNIQUE - Número del cabezal
+- `tipo`: ENUM('H2','H8','H24') - Tipo de cabezal
+- `linea`: VARCHAR(100) - Línea asignada
+- `tipo_mantenimiento`: ENUM - Tipo de mantenimiento a realizar
+- `estado`: ENUM - Estado actual del cabezal
+- `fm`: DATETIME - Fecha de último mantenimiento
+- `sm`: DATETIME - Fecha de próximo mantenimiento
+- `op` a `op11`: BOOLEAN - Checkboxes de verificación
+- `observaciones`: TEXT - Notas y observaciones
 
 ## Tipos de Mantenimiento
 
-- **Semanal**: Cada 7 días
-- **Mensual**: Cada mes
-- **Semestral**: Cada 6 meses  
-- **Año y Medio**: Cada 18 meses
+### H2 - Head 2
+- **Mensual**: Verificaciones básicas
+- **18 Meses**: Mantenimiento completo
 
-## Lista de Verificación
+### H8 - Head 8
+- **Semanal**: Limpieza y verificación rápida
+- **Quincenal**: Revisión intermedia
+- **Mensual**: Verificación completa
+- **18 Meses**: Overhaul completo
 
-1. Limpieza general
-2. Revisión tornillería
-3. Estado de código/etiquetas
-4. Esponjas y elementos flexibles
-5. Integridad de láminas
-6. Vías plásticas
-7. Estado de protecciones
-8. Lubricación
-9. Sensores
-10. Actuadores
-11. Conectores eléctricos
-12. Verificación funcional
+### H24 - Head 24
+- **Semanal**: Limpieza y verificación básica
+- **Mensual**: Verificación estándar
+- **Semestral**: Revisión profunda
+- **18 Meses**: Mantenimiento mayor
 
-## Estados del Sistema
+## Uso
 
-- **Activo**: Todas las verificaciones obligatorias aprobadas
-- **En Reparación**: Una o más verificaciones obligatorias fallaron
-- **Vencido**: Fecha de mantenimiento pasada
-- **Próximo a Vencer**: Faltan 7 días o menos para el mantenimiento
-- **Dado de Baja**: Cabezal fuera de servicio
+1. **Registrar nuevo cabezal**: Clic en "Nuevo Cabezal"
+2. **Seleccionar tipo**: Elegir entre H2, H8 o H24
+3. **Completar verificaciones**: Según el tipo seleccionado
+4. **Registrar mantenimiento**: Doble clic en tarjeta del cabezal
+5. **Dar de baja**: Desde el detalle del cabezal
+6. **Reactivar**: Desde la sección de cabezales dados de baja
+
+## Secciones
+
+- **Todos**: Vista general de cabezales activos
+- **En Línea**: Cabezales funcionando correctamente
+- **En Reparación**: Cabezales que requieren atención
+- **Próximos a Vencer**: Mantenimientos próximos
+- **Dados de Baja**: Cabezales fuera de servicio
 
 ## API Endpoints
 
-- `GET /api/mantenimientos` - Listar todos los cabezales
-- `POST /api/mantenimientos` - Crear nuevo cabezal
-- `PUT /api/mantenimientos/:id` - Actualizar cabezal
-- `DELETE /api/mantenimientos/:id` - Eliminar cabezal
-- `GET /api/mantenimientos/:id` - Obtener cabezal específico
-- `POST /api/mantenimientos/:id/reparar` - Marcar como reparado
+- `GET /api/cabezales` - Listar todos los cabezales
+- `POST /api/cabezales` - Crear nuevo cabezal
+- `PUT /api/cabezales/:id` - Actualizar cabezal
+- `DELETE /api/cabezales/:id` - Eliminar cabezal
+- `POST /api/cabezales/:id/mantenimiento` - Registrar mantenimiento
+- `POST /api/cabezales/:id/baja` - Dar de baja
+- `POST /api/cabezales/:id/reactivar` - Reactivar cabezal
+- `GET /api/cabezales/:id` - Obtener detalle de un cabezal
+
+## Tecnologías
+
+- **Backend**: Node.js, Express, MySQL2
+- **Frontend**: React, Vite, Axios
+- **Estilos**: CSS personalizado con tema oscuro
+
+## Licencia
+
+Uso interno de la empresa.
