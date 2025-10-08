@@ -185,14 +185,15 @@ router.post('/:id/reactivar', async (req, res) => {
       opFields.push(ops[`op${i}`] ? 1 : 0);
     }
 
-    const requiredChecks = ['op0','op1','op2','op3','op4','op5','op6'];
-    const allOk = requiredChecks.every(k => !!ops[k]);
-    const estado = allOk ? 'En Linea' : 'En Reparación';
-    
-    const fechaReactivacion = fecha_reactivacion || new Date().toISOString().split('T')[0];
-    const observacionesReactivacion = `REACTIVADO ${fechaReactivacion}: ${observaciones}`;
-    
-    const fechaProxima = estado === 'En Linea' ? new Date(Date.now() + 60*24*60*60*1000) : null;
+  const requiredChecks = ['op0','op1','op2','op3','op4','op5','op6'];
+  const allOk = requiredChecks.every(k => !!ops[k]);
+  // Map to DB enum values
+  const estado = allOk ? 'Operando' : 'Por reparar';
+
+  const fechaReactivacion = fecha_reactivacion || new Date().toISOString().split('T')[0];
+  const observacionesReactivacion = `REACTIVADO ${fechaReactivacion}: ${observaciones}`;
+
+  const fechaProxima = estado === 'Operando' ? new Date(Date.now() + 60*24*60*60*1000) : null;
     
     await db.query(
       `UPDATE m_cabezales SET 
@@ -221,7 +222,8 @@ router.post('/:id/mantenimiento', async (req, res) => {
     ops = {},
     observaciones = '',
     fecha_mantenimiento,
-    fecha_proximo
+    fecha_proximo,
+    tipo_mantenimiento: payloadTipoMant
   } = body;
 
   const opFields = [];
@@ -231,57 +233,51 @@ router.post('/:id/mantenimiento', async (req, res) => {
 
   const requiredChecks = ['op0','op1','op2','op3','op4','op5','op6'];
   const allOk = requiredChecks.every(k => !!ops[k]);
-  const nuevoEstado = allOk ? 'En Linea' : 'En Reparación';
+  // default mapping to DB enum
+  const defaultEstado = allOk ? 'Operando' : 'Por reparar';
 
   try {
+    // Obtener registro base para extraer el numero y datos por defecto
+    const [baseRows] = await db.query('SELECT * FROM m_cabezales WHERE id = ?', [id]);
+    if (baseRows.length === 0) {
+      return res.status(404).json({ error: 'Cabezal no encontrado' });
+    }
+    const base = baseRows[0];
+
     const fechaMantenimiento = fecha_mantenimiento || new Date().toISOString().split('T')[0];
     const proximoMantenimiento = fecha_proximo || (() => {
       const fecha = new Date(fechaMantenimiento);
       fecha.setMonth(fecha.getMonth() + 2);
       return fecha.toISOString().split('T')[0];
     })();
-    
+
+  const tipoMant = payloadTipoMant || base.tipo_mantenimiento || null;
+  const estadoFromPayload = body.estado || null;
+  const ubicacionFromPayload = body.ubicacion || null;
+
+  const tipo = base.tipo || null;
+  const linea = base.linea || null;
+  const ubicacion = ubicacionFromPayload || base.ubicacion || null;
+  const estadoToUse = estadoFromPayload || defaultEstado;
+
+    const [insertResult] = await db.query(
+      `INSERT INTO m_cabezales (numero, tipo, linea, tipo_mantenimiento, ubicacion, estado, fm, sm, op, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, observaciones)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [base.numero, tipo, linea, tipoMant, ubicacion, estadoToUse, fechaMantenimiento, proximoMantenimiento, ...opFields, `MANTENIMIENTO: ${observaciones} - ${new Date().toLocaleDateString()}`]
+    );
+
+    // Insertar en histórico también
     await db.query(
-      `UPDATE m_cabezales SET fm=?, sm=?, op=?, op1=?, op2=?, op3=?, op4=?, op5=?, op6=?, op7=?, op8=?, op9=?, op10=?, op11=?, estado=?, observaciones=CONCAT(IFNULL(observaciones,''), '\n', ?) WHERE id=?`,
-      [fechaMantenimiento, proximoMantenimiento, ...opFields, nuevoEstado, `MANTENIMIENTO: ${observaciones} - ${new Date().toLocaleDateString()}`, id]
+      `INSERT INTO historico (numero, tipo, linea, tipo_mantenimiento, ubicacion, estado, fm, sm, op, op1, op2, op3, op4, op5, op6, op7, op8, op9, op10, op11, observaciones)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [base.numero, tipo, linea, tipoMant, ubicacion, estadoToUse, fechaMantenimiento, proximoMantenimiento, ...opFields, `MANTENIMIENTO: ${observaciones} - ${new Date().toLocaleDateString()}`]
     );
-    
-    const [rows] = await db.query('SELECT * FROM m_cabezales WHERE id = ?', [id]);
-    res.json(rows[0]);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
 
-// Obtener un cabezal específico
-router.get('/:id', async (req, res) => {
-  const id = req.params.id;
-  
-  try {
-    const [rows] = await db.query('SELECT * FROM m_cabezales WHERE id = ?', [id]);
-    if (rows.length === 0) {
-      return res.status(404).json({ error: 'Cabezal no encontrado' });
-    }
-    res.json(rows[0]);
+    const [newRows] = await db.query('SELECT * FROM m_cabezales WHERE id = ?', [insertResult.insertId]);
+    return res.status(201).json(newRows[0]);
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Obtener histórico de un cabezal por número
-router.get('/historico/:numero', async (req, res) => {
-  const numero = req.params.numero;
-  try {
-    const [rows] = await db.query(
-      'SELECT * FROM historico WHERE numero = ? ORDER BY fecha_registro DESC',
-      [numero]
-    );
-    res.json(rows);
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: err.message });
+    return res.status(500).json({ error: err.message });
   }
 });
 

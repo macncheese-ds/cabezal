@@ -264,16 +264,19 @@ export default function Cabezales() {
     try {
       const res = await api.get('/cabezales')
       const data = res.data || []
-      
-      // Agrupar por número de cabezal y mantener solo el más reciente (último id)
-      const grouped = {}
+      // Agrupar por numero: cada item tendrá .entries = array de registros (uno por tipo_mantenimiento)
+      const groupedByNumero = {}
       data.forEach(item => {
-        if (!grouped[item.numero] || grouped[item.numero].id < item.id) {
-          grouped[item.numero] = item
+        const n = item.numero
+        if (!groupedByNumero[n]) groupedByNumero[n] = { numero: n, entries: [] }
+        groupedByNumero[n].entries.push(item)
+        // track primary (most recent id)
+        if (!groupedByNumero[n].primary || groupedByNumero[n].primary.id < item.id) {
+          groupedByNumero[n].primary = item
         }
       })
-      
-      const uniqueItems = Object.values(grouped)
+
+      const uniqueItems = Object.values(groupedByNumero)
       setItems(uniqueItems)
     } catch (err) {
       console.error(err)
@@ -345,7 +348,9 @@ export default function Cabezales() {
       observaciones: '', 
       fecha_mantenimiento: today,
       fecha_proximo: nextMaintenance,
-      tipo_mantenimiento: tipoMant
+      tipo_mantenimiento: tipoMant,
+      estado: item.estado || 'Operando',
+      ubicacion: item.ubicacion || 'Linea'
     })
     setShowMaintenanceForm(item)
     setDetailItem(null)
@@ -355,10 +360,12 @@ export default function Cabezales() {
     if (!showMaintenanceForm) return
     
     try {
-      await api.post(`/cabezales/${showMaintenanceForm.id}/mantenimiento`, maintenanceForm)
+      // send estado and ubicacion in maintenance payload so backend can update location/state
+      const payload = { ...maintenanceForm }
+      await api.post(`/cabezales/${showMaintenanceForm.id}/mantenimiento`, payload)
       await fetchData()
       setShowMaintenanceForm(false)
-      setMaintenanceForm({ ops: {}, observaciones: '', fecha_mantenimiento: '', fecha_proximo: '', tipo_mantenimiento: '' })
+  setMaintenanceForm({ ops: {}, observaciones: '', fecha_mantenimiento: '', fecha_proximo: '', tipo_mantenimiento: '', estado: 'Operando', ubicacion: 'Linea' })
       showCustomMessage('success', 'Mantenimiento registrado exitosamente')
     } catch (err) {
       console.error('Error al registrar mantenimiento:', err)
@@ -493,18 +500,9 @@ export default function Cabezales() {
         await api.put(`/cabezales/${editing}`, payload)
         showCustomMessage('success', 'Cabezal actualizado exitosamente')
       } else {
-        // Verificar si ya existe un cabezal con ese número
-        const existingItem = items.find(item => item.numero === form.numero)
-        
-        if (existingItem) {
-          // Actualizar el existente
-          await api.put(`/cabezales/${existingItem.id}`, payload)
-          showCustomMessage('success', 'Mantenimiento registrado exitosamente')
-        } else {
-          // Crear nuevo
-          await api.post('/cabezales', payload)
-          showCustomMessage('success', 'Cabezal registrado exitosamente')
-        }
+        // Siempre crear nuevo registro (permitir mismo número con distintos mantenimientos)
+        await api.post('/cabezales', payload)
+        showCustomMessage('success', 'Cabezal / mantenimiento registrado exitosamente')
       }
       await fetchData()
       setShowForm(false)
@@ -653,7 +651,7 @@ export default function Cabezales() {
             className={`section-btn ${currentSection === 'reparacion' ? 'active' : ''}`}
             onClick={() => setCurrentSection('reparacion')}
           >
-            En Reparación ({categorizedItems.enReparacion.length})
+            Por reparar ({categorizedItems.enReparacion.length})
           </button>
           <button 
             className={`section-btn ${currentSection === 'proximo_vencer' ? 'active' : ''}`}
@@ -834,11 +832,14 @@ export default function Cabezales() {
               )
             }
 
-            return displayItems.map(item => {
+            return displayItems.map(group => {
+              const item = (group && group.primary) ? group.primary : group
+              const entries = (group && Array.isArray(group.entries) && group.entries.length > 0) ? group.entries : [item]
+
               return (
-                <div key={item.id} onDoubleClick={() => openDetail(item)} className="card-container">
-                  <div className={`card ${item.categoria === 'vencido' ? 'card-vencido' : item.categoria === 'proximo_vencer' ? 'card-proximo' : ''}`}>
-                    {item.categoria === 'vencido' && (
+                <div key={item.id || `group-${item.numero}`} onDoubleClick={() => openDetail(item)} className="card-container">
+                  <div className={`card ${item?.categoria === 'vencido' ? 'card-vencido' : item?.categoria === 'proximo_vencer' ? 'card-proximo' : ''}`}>
+                    {item?.categoria === 'vencido' && (
                       <div style={{
                         position: 'absolute',
                         top: '0',
@@ -852,7 +853,7 @@ export default function Cabezales() {
                     <div className="card-header">
                       <div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                          {item.categoria === 'vencido' && (
+                          {item?.categoria === 'vencido' && (
                             <span style={{ 
                               color: '#dc2626', 
                               fontSize: '16px',
@@ -860,28 +861,28 @@ export default function Cabezales() {
                             }}></span>
                           )}
                           <strong style={{ 
-                            color: item.categoria === 'vencido' ? '#fca5a5' : 'inherit' 
+                            color: item?.categoria === 'vencido' ? '#fca5a5' : 'inherit' 
                           }}>
-                            {item.tipo} - {item.numero}
+                            {item?.tipo} - {item?.numero}
                           </strong>
                         </div>
                         <div className="muted" style={{ 
-                          color: item.categoria === 'vencido' ? '#dc2626' : 'inherit',
-                          fontWeight: item.categoria === 'vencido' ? '500' : 'normal'
+                          color: item?.categoria === 'vencido' ? '#dc2626' : 'inherit',
+                          fontWeight: item?.categoria === 'vencido' ? '500' : 'normal'
                         }}>
-                          {item.linea || 'Sin línea'}
+                          {item?.linea || 'Sin línea'}
                         </div>
                         <div className="muted" style={{ fontSize: '11px', marginTop: '4px' }}>
-                          {item.tipo_mantenimiento}
+                          {item?.tipo_mantenimiento}
                         </div>
                       </div>
                       <div style={{ textAlign: 'right', position: 'relative' }}>
                         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '6px' }}>
-                          <div className={`badge ${item.estado === 'En Linea' ? 'activo' : item.estado === 'Baja' ? 'baja' : 'reparacion'}`}>
-                            {item.estado}
+                          <div className={`badge ${item?.estado === 'Operando' ? 'activo' : item?.estado === 'Baja' ? 'baja' : 'reparacion'}`}>
+                            {item?.estado}
                           </div>
                         </div>
-                        {item.categoria === 'vencido' && (
+                        {item?.categoria === 'vencido' && (
                           <div className="tag danger" style={{ marginTop: '8px' }}>
                             ⚠️ Vencido
                           </div>
@@ -889,56 +890,20 @@ export default function Cabezales() {
                       </div>
                     </div>
                     <div>
-                      {item.estado === 'Baja' ? (
-                        <>
-                          <div className="muted">Fecha de baja: {formatDate(item.fm) || 'N/A'}</div>
-                          <div className="muted">Sin próximo mantenimiento</div>
-                        </>
-                      ) : item.estado === 'En Reparación' ? (
-                        <>
-                          <div className="muted">Fecha verificación: {formatDate(item.fm) || 'N/A'}</div>
-                          <div className="muted">Pendiente reparación</div>
-                        </>
-                      ) : (
-                        <>
-                          <div className="muted" style={{ 
-                            color: item.categoria === 'vencido' ? '#fca5a5' : 'inherit' 
-                          }}>
-                            Último: {formatDate(item.fm) || 'N/A'}
-                          </div>
-                          <div className="muted" style={{ 
-                            color: item.categoria === 'vencido' ? '#dc2626' : 'inherit',
-                            fontWeight: item.categoria === 'vencido' ? '600' : 'normal'
-                          }}>
-                            Próximo: {formatDate(item.sm) || 'N/A'}
-                            {item.categoria === 'vencido' && (
-                              <span style={{ 
-                                marginLeft: '8px',
-                                fontSize: '12px',
-                                color: '#dc2626',
-                                fontWeight: 'bold'
-                              }}>
-                                (¡VENCIDO!)
-                              </span>
-                            )}
-                          </div>
-                          {item.categoria === 'vencido' && (
-                            <div style={{
-                              marginTop: '8px',
-                              padding: '6px 12px',
-                              background: 'rgba(220,38,38,0.1)',
-                              border: '1px solid rgba(220,38,38,0.3)',
-                              borderRadius: '6px',
-                              fontSize: '12px',
-                              color: '#fca5a5',
-                              fontWeight: '500'
-                            }}>
-                              ⚠️ Requiere mantenimiento urgente
+                      {/* Show each maintenance entry for this numero */}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        {entries.map((e, idx) => (
+                          <div key={idx} style={{ padding: '6px 8px', borderRadius: 6, background: '#071127' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                              <div style={{ fontSize: 13, fontWeight: 600 }}>{e.tipo_mantenimiento}</div>
+                              <div className="muted">Próx: {formatDate(e.sm) || 'N/A'}</div>
                             </div>
-                          )}
-                        </>
-                      )}
-                      {item.estado === 'En Linea' && item.sm && item.categoria !== 'vencido' && (
+                            <div className="muted" style={{ fontSize: 12 }}>Últ: {formatDate(e.fm) || 'N/A'} — Estado: {e.estado}</div>
+                          </div>
+                        ))}
+                      </div>
+
+                      {item?.estado === 'Operando' && item?.sm && item?.categoria !== 'vencido' && (
                         <div style={{ marginTop: 8 }}><ProgressBar startDate={item.fm} dueDate={item.sm} /></div>
                       )}
                     </div>
@@ -963,7 +928,7 @@ export default function Cabezales() {
                   <div className="detail-info">
                     <div className="info-row">
                       <span className="label">Estado:</span>
-                      <span className={`badge ${detailItem.estado === 'En Linea' ? 'activo' : detailItem.estado === 'Baja' ? 'baja' : 'reparacion'}`}>
+                        <span className={`badge ${detailItem.estado === 'Operando' ? 'activo' : detailItem.estado === 'Baja' ? 'baja' : 'reparacion'}`}>
                         {detailItem.estado}
                       </span>
                     </div>
@@ -987,8 +952,8 @@ export default function Cabezales() {
                       <span className="label">Próximo mantenimiento:</span>
                       <span>{formatDate(detailItem.sm) || 'N/A'}</span>
                     </div>
-                    
-                    {detailItem.estado === 'En Linea' && detailItem.sm && (
+
+                    {detailItem.estado === 'Operando' && detailItem.sm && (
                       <div style={{ marginTop: 20 }}>
                         <h4>Progreso de Tiempo</h4>
                         <ProgressBar startDate={detailItem.fm} dueDate={detailItem.sm} />
@@ -1075,6 +1040,24 @@ export default function Cabezales() {
                       value={maintenanceForm.fecha_mantenimiento} 
                       onChange={e => setMaintenanceForm({...maintenanceForm, fecha_mantenimiento: e.target.value})} 
                     />
+                  </label>
+
+                  <label className="half">
+                    <div className="muted">Ubicación</div>
+                    <select className="input select" value={maintenanceForm.ubicacion} onChange={e => setMaintenanceForm({...maintenanceForm, ubicacion: e.target.value})}>
+                      <option value="Linea">Linea</option>
+                      <option value="Tool Room">Tool Room</option>
+                    </select>
+                  </label>
+
+                  <label className="half">
+                    <div className="muted">Estado</div>
+                    <select className="input select" value={maintenanceForm.estado} onChange={e => setMaintenanceForm({...maintenanceForm, estado: e.target.value})}>
+                      <option value="Operando">Operando</option>
+                      <option value="Por reparar">Por reparar</option>
+                      <option value="Baja">Baja</option>
+                      <option value="Resguardo">Resguardo</option>
+                    </select>
                   </label>
 
                   <label className="full">
